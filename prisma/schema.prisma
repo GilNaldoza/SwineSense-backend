@@ -1,0 +1,98 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  userId      Int      @id @default(autoincrement()) @map("user_id")
+  idNumber    String   @unique @map("id_number")
+  rfidTag     String   @unique @map("rfid_tag")
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  email       String?
+  userType    UserType @map("user_type") // student, faculty
+  college     String?
+  department  String?
+  yearLevel   String?  @map("year_level")
+  status      String   @default("active") // active, inactive
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  entryLogs   EntryLog[]
+
+  @@map("users")
+}
+
+model Admin {
+  adminId      Int       @id @default(autoincrement()) @map("admin_id")
+  username     String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  email        String    @unique
+  role         String    @default("staff") // super_admin, staff
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relation to logs entered by this staff member (e.g. manual entry or syncing)
+  processedLogs EntryLog[]
+  
+  // Relation to audit logs (actions performed by this admin)
+  auditLogs     AuditLog[]
+
+  @@map("admins")
+}
+
+model AuditLog {
+  auditId      Int      @id @default(autoincrement()) @map("audit_id")
+  adminId      Int      @map("admin_id")
+  actionType   String   @map("action_type") // create, update, delete, login, export
+  targetTable  String   @map("target_table") // users, entry_logs, admins
+  targetId     String?  @map("target_id")    // ID of the affected record
+  description  String?
+  ipAddress    String?  @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  admin        Admin    @relation(fields: [adminId], references: [adminId])
+
+  @@map("audit_logs")
+}
+
+model EntryLog {
+  logId          Int      @id @default(autoincrement()) @map("log_id")
+  
+  // Link to User (Student/Faculty)
+  user           User?     @relation(fields: [userId], references: [userId])
+  userId         Int?      @map("user_id")
+  // We keep rfidTag here too in case user is not found/deleted but log remains? 
+  // Or just rely on userId. The Client sends rfid_tag. 
+  // Let's store scanned rfid_tag for audit if user doesn't exist yet.
+  rfidTag        String?   @map("rfid_tag")
+
+  entryTimestamp DateTime @map("entry_timestamp")
+  entryMethod    String   @map("entry_method") // rfid, manual
+  status         String   @default("success") // success, duplicate, error
+  nodeId         String?  @map("node_id")
+  
+  // Link to Staff who processed this
+  staff          Admin?   @relation(fields: [staffId], references: [adminId])
+  staffId        Int?     @map("staff_id")
+  deletedAt      DateTime? @map("deleted_at")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("entry_logs")
+}
+
+enum UserType {
+  student
+  faculty
+}

@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: lens-v2-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: USTPeLib2025
+      POSTGRES_DB: lens_v2_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_v2_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_v2_data:

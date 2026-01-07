@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package lens;
+
+service LensSyncService {
+  // Authentication
+  rpc Login (LoginRequest) returns (LoginResponse);
+
+  // Sync Data
+  // Bidirectional or simpler: Push/Pull separately
+  rpc SyncUsers (stream User) returns (stream SyncResult); 
+  rpc PushLogs (LogBatch) returns (SyncResult);
+  
+  // Simple Pull for basic sync: give me users changed since X
+  rpc PullUsers (PullRequest) returns (UserList);
+  
+  // Push local changes
+  rpc PushUsers (UserList) returns (SyncResult);
+
+  // Real-time signals from server (e.g. "Sync Now")
+  rpc ListenForSignals (SignalRequest) returns (stream SignalMessage);
+}
+
+message SignalRequest {
+  string node_id = 1;
+  string token = 2;
+}
+
+message SignalMessage {
+  string command = 1; // e.g. "SYNC_NOW", "CONFIG_UPDATE"
+  string payload = 2;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+  string node_id = 3;
+}
+
+message LoginResponse {
+  string token = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message User {
+  int32 user_id = 1; // Server ID
+  string id_number = 2;
+  string rfid_tag = 3;
+  string first_name = 4;
+  string last_name = 5;
+  string email = 6;
+  string user_type = 7;
+  string college = 8;
+  string department = 9;
+  string year_level = 10;
+  string status = 11;
+  string updated_at = 12; // ISO String
+}
+
+message UserList {
+  repeated User users = 1;
+}
+
+message PullRequest {
+  string last_sync_timestamp = 1;
+  string token = 2;
+}
+
+message LogEntry {
+  string rfid_tag = 1;
+  string entry_timestamp = 2;
+  string entry_method = 3;
+  string status = 4;
+  string node_id = 5;
+}
+
+message LogBatch {
+  repeated LogEntry logs = 1;
+  string token = 2;
+}
+
+message SyncResult {
+  bool success = 1;
+  string message = 2;
+  int32 items_processed = 3;
+}
