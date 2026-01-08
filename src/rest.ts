@@ -6,6 +6,7 @@ import userRoutes from './api/users';
 import logRoutes from './api/logs';
 import adminRoutes from './api/admins';
 import auditRoutes from './api/audit';
+import analyticsRoutes from './api/analytics';
 
 export const startRestServer = (port: string) => {
     const app = express();
@@ -20,6 +21,7 @@ export const startRestServer = (port: string) => {
     app.use('/api/logs', logRoutes);
     app.use('/api/admins', adminRoutes);
     app.use('/api/audit', auditRoutes);
+    app.use('/api/analytics', analyticsRoutes);
 
     // Health check
     app.get('/health', (req, res) => {

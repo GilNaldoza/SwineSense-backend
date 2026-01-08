@@ -97,6 +97,7 @@ const pushLogs = async (call: any, callback: any) => {
                         entryMethod: log.entry_method || 'rfid',
                         status: log.status || (user ? 'success' : 'error'),
                         nodeId: log.node_id,
+                        location: log.location,
                         staffId: staffId,
                         userId: user?.userId || null
                     }
@@ -185,6 +186,9 @@ const pushUsers = async (call: any, callback: any) => {
     } catch(err) {
         console.error("Error pushing users:", err);
         callback(null, { success: false, message: "Sync error", items_processed: 0 });
+    }
+};
+
 const listenForSignals = (call: any) => {
     const { node_id } = call.request;
     console.log(`Node ${node_id} connected to signal stream`);
@@ -203,15 +207,6 @@ const listenForSignals = (call: any) => {
     call.on('cancelled', () => {
         console.log(`Node ${node_id} disconnected`);
         activeStreams.delete(node_id);
-        clearInterval(interval);
-    });
-    
-    call.on('end', () => {
-        console.log(`Node ${node_id} ended stream`);
-        activeStreams.delete(node_id);
-        clearInterval(interval);
-    });
-};      console.log(`Node ${node_id} ended stream`);
         clearInterval(interval);
     });
 };

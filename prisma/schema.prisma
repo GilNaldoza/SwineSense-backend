@@ -81,6 +81,7 @@ model EntryLog {
   entryMethod    String   @map("entry_method") // rfid, manual
   status         String   @default("success") // success, duplicate, error
   nodeId         String?  @map("node_id")
+  location       String?  @map("location") // e.g. Main Library, Graduate Library, CEA, etc.
   
   // Link to Staff who processed this
   staff          Admin?   @relation(fields: [staffId], references: [adminId])

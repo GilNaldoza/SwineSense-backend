@@ -148,13 +148,13 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
                 ...data,
                 updatedAt: new Date()
             }
+        });
+
         if (req.user) {
             logAudit(req.user.adminId, 'update', 'users', `Updated user ${updatedUser.idNumber}`, String(userId), req.ip);
         }
         
         broadcastSignal('SYNC_USERS', `updated_user_${userId}`);
-
-        res.json(updatedUser);
 
         res.json(updatedUser);
     } catch (error) {
@@ -175,13 +175,13 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
                 deletedAt: new Date(),
                 status: 'inactive'
             }
+        });
+
         if (req.user) {
             logAudit(req.user.adminId, 'delete', 'users', `Soft deleted user`, String(userId), req.ip);
         }
         
         broadcastSignal('SYNC_USERS', `deleted_user_${userId}`);
-
-        res.sendStatus(204);
 
         res.sendStatus(204);
     } catch (error) {

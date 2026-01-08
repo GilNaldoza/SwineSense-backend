@@ -73,6 +73,7 @@ message LogEntry {
   string entry_method = 3;
   string status = 4;
   string node_id = 5;
+  string location = 6;
 }
 
 message LogBatch {
