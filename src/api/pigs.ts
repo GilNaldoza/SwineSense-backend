@@ -35,9 +35,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         // Search
         if (search) {
              where.OR = [
-                 { pigNumber: { contains: String(search), mode: 'insensitive' } },
-                 { rfidTag: { contains: String(search), mode: 'insensitive' } },
-                 { notes: { contains: String(search), mode: 'insensitive' } }
+                 { pigNumber: { contains: String(search) } },
+                 { rfidTag: { contains: String(search) } },
+                 { notes: { contains: String(search) } }
              ];
         }
 
@@ -303,8 +303,8 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
         // Filters
         if (search) {
              where.OR = [
-                 { pigNumber: { contains: String(search), mode: 'insensitive' } },
-                 { rfidTag: { contains: String(search), mode: 'insensitive' } }
+                 { pigNumber: { contains: String(search) } },
+                 { rfidTag: { contains: String(search) } }
              ];
         }
         if (pigType) where.pigType = String(pigType);

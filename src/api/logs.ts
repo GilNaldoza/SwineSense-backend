@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { UserType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import prisma from '../db';
 import { AuthRequest, authenticateToken, requireRole } from '../middleware/auth';
@@ -32,7 +31,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         // User relational filters
         if (userType || department || college || yearLevel || search) {
             where.user = {};
-            if (userType) where.user.userType = String(userType) as UserType;
+            if (userType) where.user.userType = String(userType);
             if (department) where.user.department = String(department);
             if (college) where.user.college = String(college);
             if (yearLevel) where.user.yearLevel = String(yearLevel);
@@ -40,9 +39,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             if (search) {
                 const searchStr = String(search);
                 where.user.OR = [
-                    { firstName: { contains: searchStr, mode: 'insensitive' } },
-                    { lastName: { contains: searchStr, mode: 'insensitive' } },
-                    { idNumber: { contains: searchStr, mode: 'insensitive' } }
+                    { firstName: { contains: searchStr } },
+                    { lastName: { contains: searchStr } },
+                    { idNumber: { contains: searchStr } }
                 ];
             }
         }
@@ -79,9 +78,9 @@ router.get('/archive', requireRole('super_admin'), async (req: AuthRequest, res:
 
         if (search) {
             where.OR = [
-                { user: { firstName: { contains: String(search), mode: 'insensitive' } } },
-                { user: { lastName: { contains: String(search), mode: 'insensitive' } } },
-                { user: { idNumber: { contains: String(search), mode: 'insensitive' } } }
+                { user: { firstName: { contains: String(search) } } },
+                { user: { lastName: { contains: String(search) } } },
+                { user: { idNumber: { contains: String(search) } } }
             ];
         }
 
@@ -207,7 +206,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
         // Relational Query
         if (userType || department || college || yearLevel) {
             where.user = {};
-            if (userType) where.user.userType = String(userType) as UserType;
+            if (userType) where.user.userType = String(userType);
             if (department) where.user.department = String(department);
             if (college) where.user.college = String(college);
             if (yearLevel) where.user.yearLevel = String(yearLevel);

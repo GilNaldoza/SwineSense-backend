@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { UserType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import prisma from '../db';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
@@ -23,15 +22,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         // Search
         if (search) {
              where.OR = [
-                 { firstName: { contains: String(search), mode: 'insensitive' } },
-                 { lastName: { contains: String(search), mode: 'insensitive' } },
-                 { idNumber: { contains: String(search), mode: 'insensitive' } },
-                 { rfidTag: { contains: String(search), mode: 'insensitive' } }
+                 { firstName: { contains: String(search) } },
+                 { lastName: { contains: String(search) } },
+                 { idNumber: { contains: String(search) } },
+                 { rfidTag: { contains: String(search) } }
              ];
         }
 
         // Filters
-        if (userType) where.userType = String(userType) as UserType;
+        if (userType) where.userType = String(userType);
         if (department) where.department = String(department);
         if (college) where.college = String(college);
         if (yearLevel) where.yearLevel = String(yearLevel);
@@ -58,12 +57,12 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
         // Filters
         if (search) {
              where.OR = [
-                 { firstName: { contains: String(search), mode: 'insensitive' } },
-                 { lastName: { contains: String(search), mode: 'insensitive' } },
-                 { idNumber: { contains: String(search), mode: 'insensitive' } }
+                 { firstName: { contains: String(search) } },
+                 { lastName: { contains: String(search) } },
+                 { idNumber: { contains: String(search) } }
              ];
         }
-        if (userType) where.userType = String(userType) as UserType;
+        if (userType) where.userType = String(userType);
         if (department) where.department = String(department);
         if (college) where.college = String(college);
 

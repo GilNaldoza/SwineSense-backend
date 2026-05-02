@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model User {
@@ -17,7 +17,7 @@ model User {
   firstName   String   @map("first_name")
   lastName    String   @map("last_name")
   email       String?
-  userType    UserType @map("user_type") // student, faculty
+  userType    String @map("user_type") // student, faculty
   college     String?
   department  String?
   yearLevel   String?  @map("year_level")
@@ -94,11 +94,6 @@ model EntryLog {
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("entry_logs")
-}
-
-enum UserType {
-  student
-  faculty
 }
 
 model Pig {
