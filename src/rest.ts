@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import authRoutes from './api/auth';
 import userRoutes from './api/users';
+import pigRoutes from './api/pigs';
 import logRoutes from './api/logs';
 import adminRoutes from './api/admins';
 import auditRoutes from './api/audit';
@@ -18,6 +19,7 @@ export const startRestServer = (port: string) => {
     // Routes
     app.use('/api/auth', authRoutes);
     app.use('/api/users', userRoutes);
+    app.use('/api/pigs', pigRoutes);
     app.use('/api/logs', logRoutes);
     app.use('/api/admins', adminRoutes);
     app.use('/api/audit', auditRoutes);
