@@ -1,15 +1,13 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import prisma from '../db';
 import { AuthRequest, authenticateToken, requireRole } from '../middleware/auth';
 
 const router = Router();
 
-// Middleware: All routes require authentication
-router.use(authenticateToken);
-
-// Get all admins (only super_admin can see full list? or maybe staff too? lets say only super_admin for management)
-router.get('/', requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
+// Get all admins (only super_admin can see the full list)
+router.get('/', authenticateToken, requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
     try {
         const admins = await prisma.admin.findMany({
             select: {
@@ -28,36 +26,57 @@ router.get('/', requireRole('super_admin'), async (req: AuthRequest, res: Respon
     }
 });
 
-// Create new admin (Only super_admin)
-router.post('/', requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
+// Create new admin (first admin open registration; later only super_admin can create)
+router.post('/', async (req: AuthRequest, res: Response) => {
     const { username, password, fullName, email, role } = req.body;
+    const resolvedUsername = username?.trim() || email?.trim()
 
     try {
-        // Validation
-        if (!username || !password || !fullName || !email) {
+        if (!resolvedUsername || !password || !fullName || !email) {
              return res.status(400).json({ message: "Missing required fields" });
         }
 
-        // Check duplicates
+        const adminCount = await prisma.admin.count();
+        const allowPublicSignup = adminCount === 0;
+
+        if (!allowPublicSignup) {
+            const authHeader = req.headers['authorization'];
+            const token = authHeader && authHeader.split(' ')[1];
+            if (!token) {
+                return res.status(401).json({ message: "Authentication required" });
+            }
+
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+                req.user = decoded;
+            } catch (err) {
+                return res.status(403).json({ message: "Invalid token" });
+            }
+
+            if (!req.user || req.user.role !== 'super_admin') {
+                return res.status(403).json({ message: "Forbidden" });
+            }
+        }
+
         const existing = await prisma.admin.findFirst({
             where: {
-                OR: [{ username }, { email }]
+                OR: [{ username: resolvedUsername }, { email }]
             }
         });
 
         if (existing) {
-            return res.status(409).json({ message: "Username or Email already exists" });
+            return res.status(409).json({ message: "Email already exists" });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newAdmin = await prisma.admin.create({
             data: {
-                username,
+                username: resolvedUsername,
                 passwordHash: hashedPassword,
                 fullName,
                 email,
-                role: role || 'staff' // Default to staff
+                role: role || (allowPublicSignup ? 'super_admin' : 'staff')
             },
             select: {
                 adminId: true,
@@ -76,7 +95,7 @@ router.post('/', requireRole('super_admin'), async (req: AuthRequest, res: Respo
 });
 
 // Delete admin (Only super_admin)
-router.delete('/:id', requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticateToken, requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
     const id = Number(req.params.id);
     
     // Prevent self-deletion
