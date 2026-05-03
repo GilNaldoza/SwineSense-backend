@@ -227,6 +227,7 @@ export const startGrpcServer = (port: string) => {
         console.error(err);
         return;
       }
+      server.start();
       console.log(`LENS Backend v2 (gRPC) running on port ${portVal}`);
     });
 };
