@@ -48,7 +48,14 @@ const login = async (call: any, callback: any) => {
     const password = call.request.password;
     
     try {
-        const admin = await prisma.admin.findUnique({ where: { username } });
+        const admin = await prisma.admin.findFirst({
+            where: {
+                OR: [
+                    { username },
+                    { email: username }
+                ]
+            }
+        });
         if (!admin) {
              return callback(null, { success: false, message: "Invalid credentials", token: "" });
         }
