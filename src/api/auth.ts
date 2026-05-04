@@ -18,6 +18,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     try {
+        console.log('Login attempt for username:', username);
         const admin = await prisma.admin.findFirst({
             where: {
                 OR: [
@@ -26,11 +27,13 @@ router.post('/login', async (req: Request, res: Response) => {
                 ]
             }
         });
+        console.log('Admin found:', admin ? { adminId: admin.adminId, username: admin.username, email: admin.email } : 'none');
         if (!admin) {
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
         const valid = await bcrypt.compare(password, admin.passwordHash);
+        console.log('Password valid:', valid);
         if (!valid) {
             return res.status(401).json({ message: "Invalid credentials" });
         }
