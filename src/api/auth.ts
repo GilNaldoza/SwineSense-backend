@@ -8,7 +8,14 @@ import { logAudit } from '../utils/audit';
 const router = Router();
 
 router.post('/login', async (req: Request, res: Response) => {
-    const { username, password } = req.body;
+    const username = typeof req.body.username === 'string'
+        ? req.body.username.trim().toLowerCase()
+        : '';
+    const password = req.body.password;
+
+    if (!username || !password) {
+        return res.status(400).json({ message: "Missing username or password" });
+    }
 
     try {
         const admin = await prisma.admin.findUnique({ where: { username } });

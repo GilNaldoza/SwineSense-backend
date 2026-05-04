@@ -42,7 +42,10 @@ const verifyToken = (token: string): { adminId: number, role: string } => {
 };
 
 const login = async (call: any, callback: any) => {
-    const { username, password } = call.request;
+    const username = typeof call.request.username === 'string'
+        ? call.request.username.trim().toLowerCase()
+        : '';
+    const password = call.request.password;
     
     try {
         const admin = await prisma.admin.findUnique({ where: { username } });
