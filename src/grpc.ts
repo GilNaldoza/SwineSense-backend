@@ -42,20 +42,10 @@ const verifyToken = (token: string): { adminId: number, role: string } => {
 };
 
 const login = async (call: any, callback: any) => {
-    const username = typeof call.request.username === 'string'
-        ? call.request.username.trim().toLowerCase()
-        : '';
-    const password = call.request.password;
+    const { username, password } = call.request;
     
     try {
-        const admin = await prisma.admin.findFirst({
-            where: {
-                OR: [
-                    { username },
-                    { email: username }
-                ]
-            }
-        });
+        const admin = await prisma.admin.findUnique({ where: { username } });
         if (!admin) {
              return callback(null, { success: false, message: "Invalid credentials", token: "" });
         }

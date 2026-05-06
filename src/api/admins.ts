@@ -28,16 +28,8 @@ router.get('/', authenticateToken, requireRole('super_admin'), async (req: AuthR
 
 // Create new admin (first admin open registration; later only super_admin can create)
 router.post('/', async (req: AuthRequest, res: Response) => {
-    const rawUsername = req.body.username;
-    const password = req.body.password;
-    const fullName = req.body.fullName;
-    const rawEmail = req.body.email;
-    const role = req.body.role;
-
-    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
-    const resolvedUsername = typeof rawUsername === 'string' && rawUsername.trim()
-        ? rawUsername.trim().toLowerCase()
-        : email;
+    const { username, password, fullName, email, role } = req.body;
+    const resolvedUsername = username?.trim() || email?.trim()
 
     try {
         if (!resolvedUsername || !password || !fullName || !email) {
