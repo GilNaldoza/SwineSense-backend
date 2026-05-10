@@ -262,12 +262,41 @@ router.get('/stats/dashboard', async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // Scans by day for the last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const last7DaysScans = await prisma.pigScan.findMany({
+            where: { timestamp: { gte: sevenDaysAgo } },
+            select: { timestamp: true }
+        });
+
+        const scansByDayMap: Record<string, number> = {};
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            scansByDayMap[dateStr] = 0;
+        }
+
+        last7DaysScans.forEach(scan => {
+            const dateStr = scan.timestamp.toISOString().split('T')[0];
+            if (scansByDayMap[dateStr] !== undefined) {
+                scansByDayMap[dateStr]++;
+            }
+        });
+
+        const scansByDay = Object.keys(scansByDayMap).map(date => ({
+            date,
+            count: scansByDayMap[date]
+        }));
+
         res.json({
             totalPigs,
             healthStats,
             penStats,
             typeStats,
-            recentScans
+            recentScans,
+            scansByDay
         });
     } catch (error) {
         console.error(error);
