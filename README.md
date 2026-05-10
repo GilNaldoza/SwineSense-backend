@@ -1,6 +1,6 @@
-# LENS Backend V2
+# SwineSense Backend
 
-The central server for the Library Entry Management System (LENS). This backend handles data persistence, authentication, API requests from the frontend dashboard, and gRPC synchronization with LENS Reader nodes.
+The central server for SwineSense (Pig Management System). This backend handles data persistence, authentication, API requests from the frontend dashboard, and gRPC synchronization with SwineSense Edge nodes.
 
 ## 🏗 Architecture
 
@@ -13,9 +13,9 @@ The central server for the Library Entry Management System (LENS). This backend 
 
 ## ✨ Features
 
-- **Advanced Filtering**: Filter entry logs by Location, College, Department, Date Range, User Type, and Year Level.
-- **Analytics API**: Endpoints for generating library usage statistics and charts.
-- **Location Tracking**: Supports granular location tagging (e.g., "Main Library", "Graduate Library") for entry logs.
+- **Advanced Filtering**: Filter scan logs by Location, Farm Area, and Date Range.
+- **Analytics API**: Endpoints for generating farm scanning activity statistics and charts.
+- **Location Tracking**: Supports granular location tagging (e.g., "Farrowing Pen", "Barn A") for scan logs.
 - **Archive & Restore**: Soft-delete entries with the ability to view and restore archived logs.
 - **Role-Based Access**: Granular permissions for Super Admins and Staff.
 - **Audit Logging**: Tracks all administrative actions for security and accountability.
