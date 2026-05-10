@@ -6,16 +6,16 @@ service LensSyncService {
   // Authentication
   rpc Login (LoginRequest) returns (LoginResponse);
 
-  // Sync Data
-  // Bidirectional or simpler: Push/Pull separately
+  // Sync Data - Users and Logs
   rpc SyncUsers (stream User) returns (stream SyncResult); 
   rpc PushLogs (LogBatch) returns (SyncResult);
-  
-  // Simple Pull for basic sync: give me users changed since X
   rpc PullUsers (PullRequest) returns (UserList);
-  
-  // Push local changes
   rpc PushUsers (UserList) returns (SyncResult);
+
+  // Sync Data - Pigs and Pig Scans
+  rpc PullPigs (PullRequest) returns (PigList);
+  rpc PushPigs (PigList) returns (SyncResult);
+  rpc PushPigScans (PigScanBatch) returns (SyncResult);
 
   // Real-time signals from server (e.g. "Sync Now")
   rpc ListenForSignals (SignalRequest) returns (stream SignalMessage);
@@ -85,4 +85,36 @@ message SyncResult {
   bool success = 1;
   string message = 2;
   int32 items_processed = 3;
+}
+
+// ---- Pig Management ----
+
+message Pig {
+  string rfid_tag = 1;
+  string pig_number = 2;
+  string pig_type = 3;
+  string sire = 4;
+  string dam = 5;
+  string pen = 6;
+  string health_status = 7;
+  string weight = 8;
+  string date_of_birth = 9; // ISO string
+  string notes = 10;
+  string updated_at = 11; // ISO string
+}
+
+message PigList {
+  repeated Pig pigs = 1;
+}
+
+message PigScan {
+  string rfid_tag = 1;
+  string timestamp = 2; // ISO string
+  string location = 3;
+  string notes = 4;
+}
+
+message PigScanBatch {
+  repeated PigScan scans = 1;
+  string token = 2;
 }

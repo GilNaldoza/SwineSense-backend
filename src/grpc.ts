@@ -196,6 +196,136 @@ const pushUsers = async (call: any, callback: any) => {
     }
 };
 
+const pullPigs = async (call: any, callback: any) => {
+    const { last_sync_timestamp, token } = call.request;
+    
+    try {
+        const since = last_sync_timestamp ? new Date(last_sync_timestamp) : new Date(0);
+        
+        const pigs = await prisma.pig.findMany({
+            where: {
+                updatedAt: { gt: since }
+            }
+        });
+
+        const mappedPigs = pigs.map((p: any) => ({
+            rfid_tag: p.rfidTag,
+            pig_number: p.pigNumber,
+            pig_type: p.pigType,
+            sire: p.sire || "",
+            dam: p.dam || "",
+            pen: p.pen,
+            health_status: p.healthStatus,
+            weight: p.weight ? String(p.weight) : "",
+            date_of_birth: p.dateOfBirth.toISOString(),
+            notes: p.notes || "",
+            updated_at: p.updatedAt.toISOString()
+        }));
+
+        callback(null, { pigs: mappedPigs });
+
+    } catch (err) {
+        console.error("Error pulling pigs:", err);
+        callback(null, { pigs: [] });
+    }
+};
+
+const pushPigs = async (call: any, callback: any) => {
+    const pigs = call.request.pigs;
+
+    try {
+        let processed = 0;
+        
+        for (const p of pigs) {
+             await prisma.pig.upsert({
+                 where: { rfidTag: p.rfid_tag },
+                 update: {
+                     pigNumber: p.pig_number,
+                     pigType: p.pig_type,
+                     sire: p.sire || null,
+                     dam: p.dam || null,
+                     pen: p.pen,
+                     healthStatus: p.health_status,
+                     weight: p.weight ? parseFloat(p.weight) : null,
+                     dateOfBirth: new Date(p.date_of_birth),
+                     notes: p.notes || null,
+                     updatedAt: new Date(p.updated_at || new Date())
+                 },
+                 create: {
+                     rfidTag: p.rfid_tag,
+                     pigNumber: p.pig_number,
+                     pigType: p.pig_type,
+                     sire: p.sire || null,
+                     dam: p.dam || null,
+                     pen: p.pen,
+                     healthStatus: p.health_status,
+                     weight: p.weight ? parseFloat(p.weight) : null,
+                     dateOfBirth: new Date(p.date_of_birth),
+                     notes: p.notes || null
+                 }
+             });
+             processed++;
+        }
+        
+        broadcastSignal('SYNC_PIGS', `pushed_${processed}_pigs`);
+
+        callback(null, { success: true, message: "Synced pigs", items_processed: processed });
+    } catch(err) {
+        console.error("Error pushing pigs:", err);
+        callback(null, { success: false, message: "Sync error", items_processed: 0 });
+    }
+};
+
+const pushPigScans = async (call: any, callback: any) => {
+    const scans = call.request.scans;
+    const token = call.request.token;
+
+    try {
+        const decoded = verifyToken(token);
+        const staffId = decoded.adminId;
+        
+        console.log(`Processing ${scans?.length} pig scans from staff ID: ${staffId}`);
+
+        let processed = 0;
+
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            for (const scan of scans) {
+                const pig = await tx.pig.findUnique({
+                    where: { rfidTag: scan.rfid_tag }
+                });
+                
+                if (pig) {
+                    const timestamp = Number(scan.timestamp);
+                    const scanDate = isNaN(timestamp) ? new Date(scan.timestamp) : new Date(timestamp);
+                    const safeDate = isNaN(scanDate.getTime()) ? new Date() : scanDate;
+
+                    await tx.pigScan.create({
+                        data: {
+                            pigId: pig.pigId,
+                            timestamp: safeDate,
+                            location: scan.location,
+                            scannedBy: staffId,
+                            notes: scan.notes
+                        }
+                    });
+                    
+                    await tx.pig.update({
+                        where: { pigId: pig.pigId },
+                        data: { lastScanned: safeDate }
+                    });
+                    processed++;
+                }
+            }
+        });
+
+        callback(null, { success: true, message: "Pig scans saved successfully", items_processed: processed });
+
+    } catch (err) {
+        console.error("Auth/Db failed for pushPigScans:", err);
+        callback(null, { success: false, message: "Failed to process pig scans", items_processed: 0 });
+    }
+};
+
 const listenForSignals = (call: any) => {
     const { node_id } = call.request;
     console.log(`Node ${node_id} connected to signal stream`);
@@ -226,6 +356,9 @@ export const startGrpcServer = (port: string) => {
       PushLogs: pushLogs,
       PullUsers: pullUsers,
       PushUsers: pushUsers,
+      PullPigs: pullPigs,
+      PushPigs: pushPigs,
+      PushPigScans: pushPigScans,
       ListenForSignals: listenForSignals,
     });
 
