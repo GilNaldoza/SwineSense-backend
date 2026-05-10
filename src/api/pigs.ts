@@ -304,6 +304,53 @@ router.get('/stats/dashboard', async (req: AuthRequest, res: Response) => {
     }
 });
 
+// Get paginated pig scans
+router.get('/scans', async (req: AuthRequest, res: Response) => {
+    try {
+        const { page, limit } = getPaginationParams(req.query);
+        const { search, location, startDate, endDate } = req.query;
+
+        const where: Prisma.PigScanWhereInput = {};
+
+        // Search by Pig Number or RFID
+        if (search) {
+            where.pig = {
+                OR: [
+                    { pigNumber: { contains: String(search) } },
+                    { rfidTag: { contains: String(search) } }
+                ]
+            };
+        }
+
+        // Filters
+        if (location) where.location = String(location);
+        
+        if (startDate || endDate) {
+            where.timestamp = {};
+            if (startDate) where.timestamp.gte = new Date(String(startDate));
+            if (endDate) {
+                const end = new Date(String(endDate));
+                end.setHours(23, 59, 59, 999);
+                where.timestamp.lte = end;
+            }
+        }
+
+        const result = await paginate(prisma.pigScan, {
+            where,
+            orderBy: { timestamp: 'desc' },
+            include: {
+                pig: { select: { pigNumber: true, pigType: true, pen: true, rfidTag: true } },
+                admin: { select: { fullName: true } }
+            }
+        }, { page, limit }, 'scans');
+
+        res.json(result);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching pig scans" });
+    }
+});
+
 // Recent Scans
 router.get('/scans/recent', async (req: AuthRequest, res: Response) => {
     try {
