@@ -58,21 +58,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     }
 });
 
-// Get pig by ID
-router.get('/:id', async (req: AuthRequest, res: Response) => {
-    try {
-        const pigId = Number(req.params.id);
-        const pig = await prisma.pig.findUnique({
-            where: { pigId, deletedAt: null }
-        });
-        if (!pig) return res.status(404).json({ message: "Pig not found" });
-        res.json(pig);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error fetching pig" });
-    }
-});
-
 // Create Pig
 router.post('/', async (req: AuthRequest, res: Response) => {
     try {
@@ -112,69 +97,6 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         }
         console.error(error);
         res.status(500).json({ message: "Error creating pig" });
-    }
-});
-
-// Update Pig
-router.put('/:id', async (req: AuthRequest, res: Response) => {
-    try {
-        const pigId = Number(req.params.id);
-        const data = req.body;
-
-        // Handle dateOfBirth
-        if (data.dateOfBirth) {
-            data.dateOfBirth = new Date(data.dateOfBirth);
-        }
-
-        // Handle weight
-        if (data.weight) {
-            data.weight = parseFloat(data.weight);
-        }
-
-        const updatedPig = await prisma.pig.update({
-            where: { pigId },
-            data: {
-                ...data,
-                updatedAt: new Date()
-            }
-        });
-
-        if (req.user) {
-            logAudit(req.user.adminId, 'update', 'pigs', `Updated pig ${updatedPig.pigNumber}`, String(pigId), req.ip);
-        }
-
-        broadcastSignal('SYNC_PIGS', `updated_pig_${pigId}`);
-
-        res.json(updatedPig);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error updating pig" });
-    }
-});
-
-// Soft Delete Pig
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
-    try {
-        const pigId = Number(req.params.id);
-
-        // Soft delete
-        await prisma.pig.update({
-            where: { pigId },
-            data: {
-                deletedAt: new Date()
-            }
-        });
-
-        if (req.user) {
-            logAudit(req.user.adminId, 'delete', 'pigs', `Soft deleted pig`, String(pigId), req.ip);
-        }
-
-        broadcastSignal('SYNC_PIGS', `deleted_pig_${pigId}`);
-
-        res.sendStatus(204);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error deleting pig" });
     }
 });
 
@@ -411,6 +333,84 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Export failed" });
+    }
+});
+
+// Get pig by ID
+router.get('/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const pig = await prisma.pig.findUnique({
+            where: { pigId, deletedAt: null }
+        });
+        if (!pig) return res.status(404).json({ message: "Pig not found" });
+        res.json(pig);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching pig" });
+    }
+});
+
+// Update Pig
+router.put('/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const data = req.body;
+
+        // Handle dateOfBirth
+        if (data.dateOfBirth) {
+            data.dateOfBirth = new Date(data.dateOfBirth);
+        }
+
+        // Handle weight
+        if (data.weight) {
+            data.weight = parseFloat(data.weight);
+        }
+
+        const updatedPig = await prisma.pig.update({
+            where: { pigId },
+            data: {
+                ...data,
+                updatedAt: new Date()
+            }
+        });
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'update', 'pigs', `Updated pig ${updatedPig.pigNumber}`, String(pigId), req.ip);
+        }
+
+        broadcastSignal('SYNC_PIGS', `updated_pig_${pigId}`);
+
+        res.json(updatedPig);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error updating pig" });
+    }
+});
+
+// Soft Delete Pig
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+
+        // Soft delete
+        await prisma.pig.update({
+            where: { pigId },
+            data: {
+                deletedAt: new Date()
+            }
+        });
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'delete', 'pigs', `Soft deleted pig`, String(pigId), req.ip);
+        }
+
+        broadcastSignal('SYNC_PIGS', `deleted_pig_${pigId}`);
+
+        res.sendStatus(204);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error deleting pig" });
     }
 });
 
