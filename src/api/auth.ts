@@ -53,7 +53,7 @@ router.post('/login', async (req: Request, res: Response) => {
         // Audit Log
         logAudit(admin.adminId, 'login', 'admins', `Logged in successfully`, String(admin.adminId), req.ip);
 
-        res.json({ token, user: { username: admin.username, role: admin.role } });
+        res.json({ token, user: { username: admin.username, role: admin.role, fullName: admin.fullName, email: admin.email } });
     } catch (error) {
         console.error("Login Error:", error);
         res.status(500).json({ message: "Server error" });
@@ -69,6 +69,48 @@ router.get('/profile', authenticateToken, async (req: AuthRequest, res: Response
         res.json(admin);
     } catch (error) {
         res.status(500).json({ message: "Error fetching profile" });
+    }
+});
+
+router.put('/change-password', authenticateToken, async (req: AuthRequest, res: Response) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+
+    try {
+        const admin = await prisma.admin.findUnique({
+            where: { adminId: req.user?.adminId }
+        });
+
+        if (!admin) {
+            return res.status(404).json({ message: "Admin not found" });
+        }
+
+        const valid = await bcrypt.compare(currentPassword, admin.passwordHash);
+        if (!valid) {
+            return res.status(401).json({ message: "Current password is incorrect" });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        await prisma.admin.update({
+            where: { adminId: admin.adminId },
+            data: { passwordHash }
+        });
+
+        logAudit(admin.adminId, 'update', 'admins', 'Changed password', String(admin.adminId), req.ip);
+
+        res.json({ message: "Password changed successfully" });
+    } catch (error) {
+        console.error("Change password error:", error);
+        res.status(500).json({ message: "Server error" });
     }
 });
 
