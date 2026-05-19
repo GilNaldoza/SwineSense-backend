@@ -1,10 +1,21 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import prisma from '../db';
 import { AuthRequest, authenticateToken, requireRole } from '../middleware/auth';
 
 const router = Router();
+
+const requireSuperAdminAfterFirstAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const adminCount = await prisma.admin.count();
+    if (adminCount === 0) return next();
+
+    authenticateToken(req, res, () => {
+        if (!req.user || req.user.role !== 'super_admin') {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+        next();
+    });
+};
 
 // Get all admins (only super_admin can see the full list)
 router.get('/', authenticateToken, requireRole('super_admin'), async (req: AuthRequest, res: Response) => {
@@ -27,35 +38,13 @@ router.get('/', authenticateToken, requireRole('super_admin'), async (req: AuthR
 });
 
 // Create new admin (first admin open registration; later only super_admin can create)
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', requireSuperAdminAfterFirstAdmin, async (req: AuthRequest, res: Response) => {
     const { username, password, fullName, email, role } = req.body;
-    const resolvedUsername = username?.trim() || email?.trim()
+    const resolvedUsername = username?.trim() || email?.trim();
 
     try {
         if (!resolvedUsername || !password || !fullName || !email) {
-             return res.status(400).json({ message: "Missing required fields" });
-        }
-
-        const adminCount = await prisma.admin.count();
-        const allowPublicSignup = adminCount === 0;
-
-        if (!allowPublicSignup) {
-            const authHeader = req.headers['authorization'];
-            const token = authHeader && authHeader.split(' ')[1];
-            if (!token) {
-                return res.status(401).json({ message: "Authentication required" });
-            }
-
-            try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-                req.user = decoded;
-            } catch (err) {
-                return res.status(403).json({ message: "Invalid token" });
-            }
-
-            if (!req.user || req.user.role !== 'super_admin') {
-                return res.status(403).json({ message: "Forbidden" });
-            }
+            return res.status(400).json({ message: 'Missing required fields' });
         }
 
         const existing = await prisma.admin.findFirst({
@@ -65,10 +54,12 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         });
 
         if (existing) {
-            return res.status(409).json({ message: "Email already exists" });
+            return res.status(409).json({ message: 'Email already exists' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        const adminCount = await prisma.admin.count();
+        const isFirstAdmin = adminCount === 0;
 
         const newAdmin = await prisma.admin.create({
             data: {
@@ -76,7 +67,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
                 passwordHash: hashedPassword,
                 fullName,
                 email,
-                role: role || (allowPublicSignup ? 'super_admin' : 'staff')
+                role: role || (isFirstAdmin ? 'super_admin' : 'staff')
             },
             select: {
                 adminId: true,
@@ -89,8 +80,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         res.status(201).json(newAdmin);
 
     } catch (error) {
-        console.error("Create admin error:", error);
-        res.status(500).json({ message: "Error creating admin" });
+        console.error('Create admin error:', error);
+        res.status(500).json({ message: 'Error creating admin' });
     }
 });
 
