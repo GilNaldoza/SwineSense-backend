@@ -41,6 +41,18 @@ const verifyToken = (token: string): { adminId: number, role: string } => {
     return jwt.verify(token, process.env.JWT_SECRET) as { adminId: number, role: string };
 };
 
+const getTokenFromMetadata = (call: any): string => {
+    const metadataValue = call.metadata?.get('token');
+    if (Array.isArray(metadataValue) && metadataValue.length > 0) {
+        return String(metadataValue[0]);
+    }
+    return '';
+};
+
+const getAuthToken = (call: any): string => {
+    return call.request?.token || getTokenFromMetadata(call);
+};
+
 const login = async (call: any, callback: any) => {
     const { username, password } = call.request;
     
@@ -77,7 +89,7 @@ const login = async (call: any, callback: any) => {
 
 const pushLogs = async (call: any, callback: any) => {
     const logs = call.request.logs;
-    const token = call.request.token;
+    const token = getAuthToken(call);
 
     try {
         const decoded = verifyToken(token);
@@ -122,9 +134,11 @@ const pushLogs = async (call: any, callback: any) => {
 };
 
 const pullUsers = async (call: any, callback: any) => {
-    const { last_sync_timestamp, token } = call.request;
-    
+    const { last_sync_timestamp } = call.request;
+    const token = getAuthToken(call);
+
     try {
+        verifyToken(token);
         const since = last_sync_timestamp ? new Date(last_sync_timestamp) : new Date(0);
         
         const users = await prisma.user.findMany({
@@ -158,8 +172,10 @@ const pullUsers = async (call: any, callback: any) => {
 
 const pushUsers = async (call: any, callback: any) => {
     const users = call.request.users;
+    const token = getTokenFromMetadata(call);
 
     try {
+        verifyToken(token);
         let processed = 0;
         
         for (const u of users) {
@@ -197,9 +213,11 @@ const pushUsers = async (call: any, callback: any) => {
 };
 
 const pullPigs = async (call: any, callback: any) => {
-    const { last_sync_timestamp, token } = call.request;
+    const { last_sync_timestamp } = call.request;
+    const token = getAuthToken(call);
     
     try {
+        verifyToken(token);
         const since = last_sync_timestamp ? new Date(last_sync_timestamp) : new Date(0);
         
         const pigs = await prisma.pig.findMany({
@@ -232,8 +250,10 @@ const pullPigs = async (call: any, callback: any) => {
 
 const pushPigs = async (call: any, callback: any) => {
     const pigs = call.request.pigs;
+    const token = getTokenFromMetadata(call);
 
     try {
+        verifyToken(token);
         let processed = 0;
         
         for (const p of pigs) {
@@ -278,7 +298,7 @@ const pushPigs = async (call: any, callback: any) => {
 
 const pushPigScans = async (call: any, callback: any) => {
     const scans = call.request.scans;
-    const token = call.request.token;
+    const token = getAuthToken(call);
 
     try {
         const decoded = verifyToken(token);
