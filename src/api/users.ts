@@ -139,14 +139,21 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
     try {
         const userId = Number(req.params.id);
-        const data = req.body;
-        
+        const { firstName, lastName, email, userType, college, department, yearLevel, status } = req.body;
+
+        const data: Record<string, any> = {};
+        if (firstName !== undefined) data.firstName = firstName;
+        if (lastName !== undefined) data.lastName = lastName;
+        if (email !== undefined) data.email = email;
+        if (userType !== undefined) data.userType = userType;
+        if (college !== undefined) data.college = college;
+        if (department !== undefined) data.department = department;
+        if (yearLevel !== undefined) data.yearLevel = yearLevel;
+        if (status !== undefined) data.status = status;
+
         const updatedUser = await prisma.user.update({
             where: { userId },
-            data: {
-                ...data,
-                updatedAt: new Date()
-            }
+            data
         });
 
         if (req.user) {
