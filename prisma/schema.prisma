@@ -51,6 +51,9 @@ model Admin {
   // Relation to pig scans performed by this admin
   pigScans      PigScan[]
 
+  // Relation to weight logs recorded by this admin
+  weightLogs    WeightLog[]
+
   @@map("admins")
 }
 
@@ -114,6 +117,7 @@ model Pig {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   scanLogs     PigScan[]
+  weightLogs   WeightLog[]
 
   @@map("pigs")
 }
@@ -130,4 +134,18 @@ model PigScan {
   admin     Admin?   @relation(fields: [scannedBy], references: [adminId])
 
   @@map("pig_scans")
+}
+
+model WeightLog {
+  weightLogId Int      @id @default(autoincrement()) @map("weight_log_id")
+  pigId       Int      @map("pig_id")
+  weight      Float    @map("weight")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+  recordedBy  Int?     @map("recorded_by")
+  notes       String?  @map("notes")
+
+  pig         Pig      @relation(fields: [pigId], references: [pigId])
+  admin       Admin?   @relation(fields: [recordedBy], references: [adminId])
+
+  @@map("weight_logs")
 }

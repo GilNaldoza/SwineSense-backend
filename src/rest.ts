@@ -12,8 +12,10 @@ import analyticsRoutes from './api/analytics';
 export const startRestServer = (port: string) => {
     const app = express();
 
+    const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5000')
+        .split(',').map(s => s.trim()).filter(Boolean);
     app.use(cors({
-        origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5000'],
+        origin: corsOrigins,
         credentials: true
     }));
     app.use(express.json());
@@ -34,6 +36,6 @@ export const startRestServer = (port: string) => {
     });
 
     app.listen(port, () => {
-        console.log(`LENS Backend v2 (REST) running on port ${port}`);
+        console.log(`SwineSense Backend (REST) running on port ${port}`);
     });
 };

@@ -162,11 +162,27 @@ router.get('/stats/dashboard', async (req: AuthRequest, res: Response) => {
             _count: { pigId: true }
         });
 
-        const penStats = await prisma.pig.groupBy({
-            by: ['pen'],
+        // Per-pen health breakdown (groups by both pen AND healthStatus)
+        const penHealthRaw = await prisma.pig.groupBy({
+            by: ['pen', 'healthStatus'],
             where: { deletedAt: null },
             _count: { pigId: true }
         });
+
+        // Aggregate into per-pen summary
+        const penMap: Record<string, { count: number; healthy: number; atRisk: number; sick: number }> = {};
+        penHealthRaw.forEach((row) => {
+            if (!penMap[row.pen]) {
+                penMap[row.pen] = { count: 0, healthy: 0, atRisk: 0, sick: 0 };
+            }
+            const entry = penMap[row.pen];
+            const c = row._count.pigId;
+            entry.count += c;
+            if (row.healthStatus === 'healthy') entry.healthy += c;
+            else if (row.healthStatus === 'at-risk') entry.atRisk += c;
+            else if (row.healthStatus === 'sick') entry.sick += c;
+        });
+        const penStats = Object.entries(penMap).map(([pen, data]) => ({ pen, ...data }));
 
         const typeStats = await prisma.pig.groupBy({
             by: ['pigType'],
@@ -336,6 +352,120 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
     }
 });
 
+// Export Pig Scans as CSV
+router.get('/scans/export', async (req: AuthRequest, res: Response) => {
+    try {
+        const { search, location, startDate, endDate } = req.query;
+        const where: Prisma.PigScanWhereInput = {};
+
+        if (search) {
+            where.pig = {
+                OR: [
+                    { pigNumber: { contains: String(search) } },
+                    { rfidTag: { contains: String(search) } }
+                ]
+            };
+        }
+        if (location) where.location = String(location);
+        if (startDate || endDate) {
+            where.timestamp = {};
+            if (startDate) where.timestamp.gte = new Date(String(startDate));
+            if (endDate) {
+                const end = new Date(String(endDate));
+                end.setHours(23, 59, 59, 999);
+                where.timestamp.lte = end;
+            }
+        }
+
+        const scans = await prisma.pigScan.findMany({
+            where,
+            orderBy: { timestamp: 'desc' },
+            include: {
+                pig: { select: { pigNumber: true, pigType: true, pen: true, rfidTag: true } },
+                admin: { select: { fullName: true } }
+            }
+        });
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'export', 'pig_scans', `Exported ${scans.length} scans`, undefined, req.ip);
+        }
+
+        const headers = ["Pig Number", "RFID Tag", "Type", "Pen", "Scan Time", "Location", "Scanned By", "Notes"];
+        const rows = scans.map((s: any) => [
+            s.pig?.pigNumber, s.pig?.rfidTag, s.pig?.pigType, s.pig?.pen,
+            s.timestamp?.toISOString(), s.location, s.admin?.fullName, s.notes
+        ].map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(","));
+
+        const csv = [headers.join(","), ...rows].join("\n");
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="pig_scans_export.csv"');
+        res.send(csv);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Scan export failed" });
+    }
+});
+
+// Record weight for a pig
+router.post('/:id/weight', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const { weight, notes } = req.body;
+
+        if (weight === undefined || weight === null) {
+            return res.status(400).json({ message: "Weight is required" });
+        }
+
+        const pig = await prisma.pig.findUnique({ where: { pigId, deletedAt: null } });
+        if (!pig) return res.status(404).json({ message: "Pig not found" });
+
+        const weightVal = parseFloat(weight);
+
+        const weightLog = await prisma.weightLog.create({
+            data: {
+                pigId,
+                weight: weightVal,
+                recordedBy: req.user?.adminId,
+                notes
+            },
+            include: { admin: { select: { fullName: true } } }
+        });
+
+        // Also update the pig's current weight field
+        await prisma.pig.update({ where: { pigId }, data: { weight: weightVal } });
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'create', 'weight_logs', `Recorded weight ${weightVal}kg for pig ${pig.pigNumber}`, String(weightLog.weightLogId), req.ip);
+        }
+
+        res.status(201).json(weightLog);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error recording weight" });
+    }
+});
+
+// Get weight history for a pig
+router.get('/:id/weight', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const limit = Number(req.query.limit) || 50;
+
+        const logs = await prisma.weightLog.findMany({
+            where: { pigId },
+            orderBy: { recordedAt: 'desc' },
+            take: limit,
+            include: { admin: { select: { fullName: true } } }
+        });
+
+        res.json(logs);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching weight history" });
+    }
+});
+
 // Get pig by ID
 router.get('/:id', async (req: AuthRequest, res: Response) => {
     try {
@@ -355,24 +485,23 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
     try {
         const pigId = Number(req.params.id);
-        const data = req.body;
+        const { rfidTag, pigNumber, pigType, sire, dam, pen, healthStatus, weight, dateOfBirth, notes } = req.body;
 
-        // Handle dateOfBirth
-        if (data.dateOfBirth) {
-            data.dateOfBirth = new Date(data.dateOfBirth);
-        }
-
-        // Handle weight
-        if (data.weight) {
-            data.weight = parseFloat(data.weight);
-        }
+        const data: Record<string, any> = {};
+        if (rfidTag !== undefined) data.rfidTag = rfidTag;
+        if (pigNumber !== undefined) data.pigNumber = pigNumber;
+        if (pigType !== undefined) data.pigType = pigType;
+        if (sire !== undefined) data.sire = sire;
+        if (dam !== undefined) data.dam = dam;
+        if (pen !== undefined) data.pen = pen;
+        if (healthStatus !== undefined) data.healthStatus = healthStatus;
+        if (weight !== undefined) data.weight = parseFloat(weight);
+        if (dateOfBirth !== undefined) data.dateOfBirth = new Date(dateOfBirth);
+        if (notes !== undefined) data.notes = notes;
 
         const updatedPig = await prisma.pig.update({
             where: { pigId },
-            data: {
-                ...data,
-                updatedAt: new Date()
-            }
+            data
         });
 
         if (req.user) {

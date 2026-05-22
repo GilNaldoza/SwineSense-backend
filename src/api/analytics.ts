@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import prisma from '../db';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 
@@ -7,241 +7,145 @@ const router = Router();
 
 router.use(authenticateToken);
 
-const getDateFilter = (query: any) => {
+// Helper: build date filter for pig scans
+const getDateFilter = (query: any): Prisma.PigScanWhereInput => {
     const { period, startDate, endDate } = query;
-    let start = new Date();
-    let end = new Date();
+    const filter: Prisma.PigScanWhereInput = {};
 
     if (startDate && endDate) {
-        start = new Date(startDate);
-        end = new Date(endDate);
-        // Ensure end date includes the full day
+        const start = new Date(startDate);
+        const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
+        filter.timestamp = { gte: start, lte: end };
     } else {
-        // Defaults: '30d' -> 30 days
         const p = String(period || '30d');
         const days = parseInt(p.replace(/[^0-9]/g, '')) || 30;
+        const start = new Date();
         start.setDate(start.getDate() - days);
         start.setHours(0, 0, 0, 0);
+        filter.timestamp = { gte: start };
     }
-    return { entryTimestamp: { gte: start, lte: end } };
+    return filter;
 };
 
-// GET /trends
+// GET /trends — Pig scan trends by day
 router.get('/trends', async (req: AuthRequest, res: Response) => {
     try {
-        const where: Prisma.EntryLogWhereInput = { 
-            deletedAt: null,
-            ...getDateFilter(req.query)
-        };
-        
-        if (req.query.userType && req.query.userType !== 'all') {
-            where.user = { userType: String(req.query.userType) as any };
-        }
+        const dateFilter = getDateFilter(req.query);
 
-        const logs = await prisma.entryLog.findMany({
-            where,
-            select: { entryTimestamp: true }
+        const scans = await prisma.pigScan.findMany({
+            where: dateFilter,
+            select: { timestamp: true }
         });
 
         const dayMap = new Map<string, number>();
-        logs.forEach(l => {
-            const d = l.entryTimestamp.toISOString().split('T')[0]; // YYYY-MM-DD
+        scans.forEach(s => {
+            const d = s.timestamp.toISOString().split('T')[0];
             dayMap.set(d, (dayMap.get(d) || 0) + 1);
         });
 
         const trends = Array.from(dayMap.entries())
-            .map(([date, count]) => ({ date, count, label: date }))
+            .map(([date, count]) => ({ date, count }))
             .sort((a, b) => a.date.localeCompare(b.date));
 
         res.json({
             success: true,
-            data: {
-                period: req.query.period || 'custom',
-                trends,
-                totalEntries: logs.length
-            }
+            data: { period: req.query.period || 'custom', trends, totalScans: scans.length }
         });
     } catch (error) {
         console.error("Analytics Error:", error);
-        res.status(500).json({ message: "Error fetching trends" });
+        res.status(500).json({ message: "Error fetching scan trends" });
     }
 });
 
-// GET /by-college
-router.get('/by-college', async (req: AuthRequest, res: Response) => {
+// GET /by-type — Pig count grouped by type
+router.get('/by-type', async (req: AuthRequest, res: Response) => {
     try {
-        const where: Prisma.EntryLogWhereInput = { 
-            deletedAt: null, 
-            ...getDateFilter(req.query) 
-        };
-
-        const logs = await prisma.entryLog.findMany({
-            where,
-            select: { user: { select: { college: true } } }
+        const typeStats = await prisma.pig.groupBy({
+            by: ['pigType'],
+            where: { deletedAt: null },
+            _count: { pigId: true }
         });
 
-        const map = new Map<string, number>();
-        let total = 0;
-        logs.forEach(l => {
-            const c = l.user?.college || 'Unknown';
-            map.set(c, (map.get(c) || 0) + 1);
-            total++;
+        const total = typeStats.reduce((sum, t) => sum + t._count.pigId, 0);
+        const types = typeStats.map(t => ({
+            type: t.pigType,
+            count: t._count.pigId,
+            percentage: total ? ((t._count.pigId / total) * 100).toFixed(1) + '%' : '0%'
+        })).sort((a, b) => b.count - a.count);
+
+        res.json({ success: true, data: { types, totalPigs: total } });
+    } catch (error) {
+        console.error("Analytics Error:", error);
+        res.status(500).json({ message: "Error fetching type stats" });
+    }
+});
+
+// GET /by-pen — Pig count by pen with health breakdown
+router.get('/by-pen', async (req: AuthRequest, res: Response) => {
+    try {
+        const penHealthRaw = await prisma.pig.groupBy({
+            by: ['pen', 'healthStatus'],
+            where: { deletedAt: null },
+            _count: { pigId: true }
         });
 
-        const colleges = Array.from(map.entries())
-            .map(([college, count]) => ({
-                college,
-                count,
-                percentage: total ? ((count / total) * 100).toFixed(1) + '%' : '0%'
-            }))
+        const penMap: Record<string, { count: number; healthy: number; atRisk: number; sick: number }> = {};
+        penHealthRaw.forEach(row => {
+            if (!penMap[row.pen]) {
+                penMap[row.pen] = { count: 0, healthy: 0, atRisk: 0, sick: 0 };
+            }
+            const entry = penMap[row.pen];
+            const c = row._count.pigId;
+            entry.count += c;
+            if (row.healthStatus === 'healthy') entry.healthy += c;
+            else if (row.healthStatus === 'at-risk') entry.atRisk += c;
+            else if (row.healthStatus === 'sick') entry.sick += c;
+        });
+
+        const pens = Object.entries(penMap)
+            .map(([pen, data]) => ({ pen, ...data }))
             .sort((a, b) => b.count - a.count);
 
-        res.json({
-            success: true,
-            data: { colleges, totalEntries: total }
-        });
+        res.json({ success: true, data: { pens, totalPens: pens.length } });
     } catch (error) {
         console.error("Analytics Error:", error);
-        res.status(500).json({ message: "Error fetching college stats" });
+        res.status(500).json({ message: "Error fetching pen stats" });
     }
 });
 
-// GET /by-department
-router.get('/by-department', async (req: AuthRequest, res: Response) => {
+// GET /health-trends — Health status changes over time (scan-based)
+router.get('/health-trends', async (req: AuthRequest, res: Response) => {
     try {
-        const { college } = req.query;
-        const where: Prisma.EntryLogWhereInput = { 
-            deletedAt: null, 
-            ...getDateFilter(req.query) 
-        };
+        const dateFilter = getDateFilter(req.query);
 
-        if (college) {
-            where.user = { college: String(college) };
-        }
-
-        const logs = await prisma.entryLog.findMany({
-            where,
-            select: { user: { select: { department: true, college: true } } }
-        });
-
-        const map = new Map<string, number>(); // dept -> count
-        const deptToCollege = new Map<string, string>(); // dept -> college
-        let total = 0;
-
-        logs.forEach(l => {
-            const d = l.user?.department || 'Unknown';
-            map.set(d, (map.get(d) || 0) + 1);
-            if (l.user?.college) deptToCollege.set(d, l.user.college);
-            total++;
-        });
-
-        const departments = Array.from(map.entries())
-            .map(([department, count]) => ({
-                department,
-                college: deptToCollege.get(department) || 'Unknown',
-                count,
-                percentage: total ? ((count / total) * 100).toFixed(1) + '%' : '0%'
-            }))
-            .sort((a, b) => b.count - a.count);
-
-        res.json({
-            success: true,
-            data: { departments, totalEntries: total }
-        });
-    } catch (error) {
-        console.error("Analytics Error:", error);
-        res.status(500).json({ message: "Error fetching department stats" });
-    }
-});
-
-// GET /time-by-college
-router.get('/time-by-college', async (req: AuthRequest, res: Response) => {
-    try {
-        const where: Prisma.EntryLogWhereInput = { 
-            deletedAt: null, 
-            ...getDateFilter(req.query) 
-        };
-
-        const logs = await prisma.entryLog.findMany({
-            where,
-            select: { entryTimestamp: true, user: { select: { college: true } } }
-        });
-
-        const dateMap = new Map<string, Record<string, any>>();
-        const allColleges = new Set<string>();
-
-        logs.forEach(l => {
-            const date = l.entryTimestamp.toISOString().split('T')[0];
-            const college = l.user?.college || 'Unknown';
-            allColleges.add(college);
-
-            if (!dateMap.has(date)) {
-                dateMap.set(date, { date });
+        const scans = await prisma.pigScan.findMany({
+            where: dateFilter,
+            select: {
+                timestamp: true,
+                pig: { select: { healthStatus: true } }
             }
-            const record = dateMap.get(date)!;
-            record[college] = (record[college] || 0) + 1;
         });
 
-        // Fill missing zeros if needed? Frontend usually handles missing keys or we can pre-fill.
-        // Frontend Recharts handles missing keys gracefully usually.
+        const dayMap = new Map<string, { healthy: number; atRisk: number; sick: number }>();
+        scans.forEach(s => {
+            const d = s.timestamp.toISOString().split('T')[0];
+            if (!dayMap.has(d)) dayMap.set(d, { healthy: 0, atRisk: 0, sick: 0 });
+            const entry = dayMap.get(d)!;
+            const status = s.pig?.healthStatus;
+            if (status === 'healthy') entry.healthy++;
+            else if (status === 'at-risk') entry.atRisk++;
+            else if (status === 'sick') entry.sick++;
+        });
 
-        const data = Array.from(dateMap.values())
+        const trends = Array.from(dayMap.entries())
+            .map(([date, statuses]) => ({ date, ...statuses }))
             .sort((a, b) => a.date.localeCompare(b.date));
 
-        res.json({
-            success: true,
-            data: {
-                period: req.query.period || 'custom',
-                categories: Array.from(allColleges),
-                data
-            }
-        });
+        res.json({ success: true, data: { trends } });
     } catch (error) {
         console.error("Analytics Error:", error);
-        res.status(500).json({ message: "Error fetching time stats" });
-    }
-});
-
-// GET /peak-hours
-router.get('/peak-hours', async (req: AuthRequest, res: Response) => {
-    try {
-        // usually peak hours is over All Time or last X days? Let's assume Last 30 days default if no filter
-        const where: Prisma.EntryLogWhereInput = {
-            deletedAt: null,
-            ...getDateFilter({ ...req.query, period: req.query.period || '30d' })
-        };
-
-        const logs = await prisma.entryLog.findMany({
-            where,
-            select: { entryTimestamp: true }
-        });
-
-        const hourMap = new Array(24).fill(0);
-        logs.forEach(l => {
-            const h = new Date(l.entryTimestamp).getHours();
-            hourMap[h]++;
-        });
-
-        const peakHours = hourMap.map((count, hour) => ({
-            hour,
-            count,
-            label: `${hour}:00`
-        }));
-
-        const max = Math.max(...hourMap);
-        const peakHourIdx = hourMap.indexOf(max);
-
-        res.json({
-            success: true,
-            data: {
-                peakHours,
-                peakHour: { hour: peakHourIdx, count: max, label: `${peakHourIdx}:00` }
-            }
-        });
-    } catch (error) {
-        console.error("Analytics Error:", error);
-        res.status(500).json({ message: "Error fetching peak hours" });
+        res.status(500).json({ message: "Error fetching health trends" });
     }
 });
 

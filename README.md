@@ -34,7 +34,7 @@ The central server for SwineSense (Pig Management System). This backend handles 
 Create a `.env` file in the root directory:
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/lens_db?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5432/swinesense_db?schema=public"
 PORT=3000
 GRPC_PORT=50051
 JWT_SECRET="your-secret-key"
@@ -44,15 +44,17 @@ NODE_ENV="development"
 ### Installation
 
 1.  **Install dependencies:**
+
     ```bash
     npm install
     ```
 
 2.  **Setup Database:**
+
     ```bash
     # Run migrations
     npx prisma migrate dev
-    
+
     # (Optional) Seed data
     npx prisma db seed
     ```
@@ -66,15 +68,19 @@ NODE_ENV="development"
 ## 📚 API Overview
 
 ### Logs
+
 - `GET /api/logs`: Fetch entry logs with query params (`?location=...&college=...`).
 - `GET /api/logs/export`: Download CSV of logs.
 
 ### Analytics
+
 - `GET /api/analytics/summary`: General stats.
 - `GET /api/analytics/peak-hours`: Peak usage times.
 
 ### Syncing
+
 The gRPC service is defined in `src/proto/lens.proto` and handles:
+
 - `SyncUser`: Pushing/Pulling user data.
 - `SyncLog`: Uploading entry logs from nodes.
 - `StreamSignals`: Real-time backend-to-node commands.

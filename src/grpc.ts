@@ -354,7 +354,7 @@ const listenForSignals = (call: any) => {
 
     call.write({
         command: "CONNECTED",
-        payload: "Connected to LENS Backend V2"
+        payload: "Connected to SwineSense Backend"
     });
     
     const interval = setInterval(() => {
@@ -388,6 +388,6 @@ export const startGrpcServer = (port: string) => {
         return;
       }
       server.start();
-      console.log(`LENS Backend v2 (gRPC) running on port ${portVal}`);
+      console.log(`SwineSense Backend (gRPC) running on port ${portVal}`);
     });
 };

@@ -7,7 +7,35 @@ import { logAudit } from '../utils/audit';
 
 const router = Router();
 
+// Simple in-memory rate limiter for login
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+// Cleanup stale entries every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of loginAttempts.entries()) {
+        if (now > val.resetAt) loginAttempts.delete(key);
+    }
+}, 5 * 60 * 1000);
+
 router.post('/login', async (req: Request, res: Response) => {
+    // Rate limiting check
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const attempt = loginAttempts.get(clientIp);
+    if (attempt) {
+        if (now > attempt.resetAt) {
+            loginAttempts.delete(clientIp);
+        } else if (attempt.count >= RATE_LIMIT_MAX) {
+            const retryAfterSec = Math.ceil((attempt.resetAt - now) / 1000);
+            return res.status(429).json({
+                message: `Too many login attempts. Try again in ${retryAfterSec} seconds.`
+            });
+        }
+    }
+
     const username = typeof req.body.username === 'string'
         ? req.body.username.trim().toLowerCase()
         : '';
@@ -29,14 +57,25 @@ router.post('/login', async (req: Request, res: Response) => {
         });
         console.log('Admin found:', admin ? { adminId: admin.adminId, username: admin.username, email: admin.email } : 'none');
         if (!admin) {
+            // Track failed attempt
+            const entry = loginAttempts.get(clientIp) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+            entry.count++;
+            loginAttempts.set(clientIp, entry);
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
         const valid = await bcrypt.compare(password, admin.passwordHash);
         console.log('Password valid:', valid);
         if (!valid) {
+            // Track failed attempt
+            const entry = loginAttempts.get(clientIp) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+            entry.count++;
+            loginAttempts.set(clientIp, entry);
             return res.status(401).json({ message: "Invalid credentials" });
         }
+
+        // Successful login — clear rate limit
+        loginAttempts.delete(clientIp);
 
         const token = jwt.sign(
             { adminId: admin.adminId, role: admin.role },
