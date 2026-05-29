@@ -407,6 +407,99 @@ router.get('/scans/export', async (req: AuthRequest, res: Response) => {
     }
 });
 
+// Record a health status change for a pig
+router.post('/:id/health', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const { newStatus, reason } = req.body;
+
+        if (!newStatus || !['healthy', 'at-risk', 'sick'].includes(newStatus)) {
+            return res.status(400).json({ message: "Invalid health status. Must be: healthy, at-risk, sick" });
+        }
+
+        const pig = await prisma.pig.findUnique({ where: { pigId, deletedAt: null } });
+        if (!pig) return res.status(404).json({ message: "Pig not found" });
+
+        const previousStatus = pig.healthStatus;
+
+        // Skip if status hasn't changed
+        if (previousStatus === newStatus) {
+            return res.status(200).json({ message: "Status unchanged", healthStatus: newStatus });
+        }
+
+        // Create health log entry and update pig status atomically
+        const [healthLog] = await prisma.$transaction([
+            prisma.healthLog.create({
+                data: {
+                    pigId,
+                    previousStatus,
+                    newStatus,
+                    reason,
+                    recordedBy: req.user?.adminId,
+                },
+                include: { admin: { select: { fullName: true } } }
+            }),
+            prisma.pig.update({
+                where: { pigId },
+                data: { healthStatus: newStatus }
+            })
+        ]);
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'update', 'pigs', `Changed health ${previousStatus} → ${newStatus} for pig ${pig.pigNumber}`, String(pigId), req.ip);
+        }
+
+        broadcastSignal('SYNC_PIGS', `health_updated_pig_${pigId}`);
+
+        res.status(201).json(healthLog);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error recording health change" });
+    }
+});
+
+// Get health history for a pig
+router.get('/:id/health', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const limit = Number(req.query.limit) || 50;
+
+        const logs = await prisma.healthLog.findMany({
+            where: { pigId },
+            orderBy: { recordedAt: 'desc' },
+            take: limit,
+            include: { admin: { select: { fullName: true } } }
+        });
+
+        res.json(logs);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching health history" });
+    }
+});
+
+// Get scan history for a specific pig
+router.get('/:id/scans', async (req: AuthRequest, res: Response) => {
+    try {
+        const pigId = Number(req.params.id);
+        const limit = Number(req.query.limit) || 50;
+
+        const scans = await prisma.pigScan.findMany({
+            where: { pigId },
+            orderBy: { timestamp: 'desc' },
+            take: limit,
+            include: {
+                admin: { select: { fullName: true } }
+            }
+        });
+
+        res.json(scans);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching pig scan history" });
+    }
+});
+
 // Record weight for a pig
 router.post('/:id/weight', async (req: AuthRequest, res: Response) => {
     try {
@@ -540,6 +633,159 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Error deleting pig" });
+    }
+});
+
+// ===================== BATCH OPERATIONS =====================
+
+// Batch update health status for multiple pigs
+router.post('/batch/health', async (req: AuthRequest, res: Response) => {
+    try {
+        const { pigIds, healthStatus, reason } = req.body;
+
+        if (!Array.isArray(pigIds) || pigIds.length === 0) {
+            return res.status(400).json({ message: "pigIds must be a non-empty array" });
+        }
+        if (!healthStatus || !['healthy', 'at-risk', 'sick'].includes(healthStatus)) {
+            return res.status(400).json({ message: "Invalid healthStatus" });
+        }
+
+        const pigs = await prisma.pig.findMany({
+            where: { pigId: { in: pigIds.map(Number) }, deletedAt: null }
+        });
+
+        const updated: number[] = [];
+
+        for (const pig of pigs) {
+            if (pig.healthStatus !== healthStatus) {
+                await prisma.$transaction([
+                    prisma.healthLog.create({
+                        data: {
+                            pigId: pig.pigId,
+                            previousStatus: pig.healthStatus,
+                            newStatus: healthStatus,
+                            reason: reason || `Batch update`,
+                            recordedBy: req.user?.adminId,
+                        }
+                    }),
+                    prisma.pig.update({
+                        where: { pigId: pig.pigId },
+                        data: { healthStatus }
+                    })
+                ]);
+                updated.push(pig.pigId);
+            }
+        }
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'update', 'pigs', `Batch health update to ${healthStatus} for ${updated.length} pigs`, undefined, req.ip);
+        }
+
+        broadcastSignal('SYNC_PIGS', `batch_health_update`);
+
+        res.json({ message: `Updated ${updated.length} pigs`, updated });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Batch health update failed" });
+    }
+});
+
+// Batch transfer pigs to a new pen
+router.post('/batch/transfer', async (req: AuthRequest, res: Response) => {
+    try {
+        const { pigIds, pen } = req.body;
+
+        if (!Array.isArray(pigIds) || pigIds.length === 0) {
+            return res.status(400).json({ message: "pigIds must be a non-empty array" });
+        }
+        if (!pen || typeof pen !== 'string') {
+            return res.status(400).json({ message: "pen must be a non-empty string" });
+        }
+
+        const result = await prisma.pig.updateMany({
+            where: { pigId: { in: pigIds.map(Number) }, deletedAt: null },
+            data: { pen }
+        });
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'update', 'pigs', `Batch transferred ${result.count} pigs to pen ${pen}`, undefined, req.ip);
+        }
+
+        broadcastSignal('SYNC_PIGS', `batch_pen_transfer`);
+
+        res.json({ message: `Transferred ${result.count} pigs to pen ${pen}`, count: result.count });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Batch transfer failed" });
+    }
+});
+
+// CSV Import: Parse CSV text body and create pigs
+router.post('/import', async (req: AuthRequest, res: Response) => {
+    try {
+        const { rows } = req.body;
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({ message: "rows must be a non-empty array of pig objects" });
+        }
+
+        const created: string[] = [];
+        const errors: string[] = [];
+
+        for (const row of rows) {
+            try {
+                const { pigNumber, rfidTag, pigType, pen, dateOfBirth, sire, dam, weight, healthStatus, notes } = row;
+
+                if (!pigNumber || !rfidTag || !pigType || !pen || !dateOfBirth) {
+                    errors.push(`Row missing required fields: ${pigNumber || 'unknown'}`);
+                    continue;
+                }
+
+                // Check for duplicates
+                const existing = await prisma.pig.findFirst({
+                    where: {
+                        OR: [{ rfidTag }, { pigNumber }],
+                        deletedAt: null
+                    }
+                });
+
+                if (existing) {
+                    errors.push(`Duplicate: ${pigNumber} (RFID: ${rfidTag})`);
+                    continue;
+                }
+
+                await prisma.pig.create({
+                    data: {
+                        pigNumber,
+                        rfidTag,
+                        pigType,
+                        pen,
+                        dateOfBirth: new Date(dateOfBirth),
+                        sire: sire || null,
+                        dam: dam || null,
+                        weight: weight ? parseFloat(weight) : null,
+                        healthStatus: healthStatus || 'healthy',
+                        notes: notes || null,
+                    }
+                });
+                created.push(pigNumber);
+            } catch (rowErr: any) {
+                errors.push(`Error on ${row.pigNumber || 'unknown'}: ${rowErr.message}`);
+            }
+        }
+
+        if (req.user) {
+            logAudit(req.user.adminId, 'create', 'pigs', `Imported ${created.length} pigs (${errors.length} errors)`, undefined, req.ip);
+        }
+
+        if (created.length > 0) {
+            broadcastSignal('SYNC_PIGS', `import_${created.length}_pigs`);
+        }
+
+        res.json({ created: created.length, errors });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Import failed" });
     }
 });
 

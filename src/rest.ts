@@ -2,12 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import authRoutes from './api/auth';
-import userRoutes from './api/users';
 import pigRoutes from './api/pigs';
-import logRoutes from './api/logs';
 import adminRoutes from './api/admins';
 import auditRoutes from './api/audit';
 import analyticsRoutes from './api/analytics';
+import treatmentRoutes from './api/treatments';
 
 export const startRestServer = (port: string) => {
     const app = express();
@@ -23,12 +22,11 @@ export const startRestServer = (port: string) => {
 
     // Routes
     app.use('/api/auth', authRoutes);
-    app.use('/api/users', userRoutes);
     app.use('/api/pigs', pigRoutes);
-    app.use('/api/logs', logRoutes);
     app.use('/api/admins', adminRoutes);
     app.use('/api/audit', auditRoutes);
     app.use('/api/analytics', analyticsRoutes);
+    app.use('/api/treatments', treatmentRoutes);
 
     // Health check
     app.get('/health', (req, res) => {

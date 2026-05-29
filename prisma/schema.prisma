@@ -10,27 +10,6 @@ datasource db {
   url      = "file:./dev.db"
 }
 
-model User {
-  userId      Int      @id @default(autoincrement()) @map("user_id")
-  idNumber    String   @unique @map("id_number")
-  rfidTag     String   @unique @map("rfid_tag")
-  firstName   String   @map("first_name")
-  lastName    String   @map("last_name")
-  email       String?
-  userType    String @map("user_type") // student, faculty
-  college     String?
-  department  String?
-  yearLevel   String?  @map("year_level")
-  status      String   @default("active") // active, inactive
-  deletedAt   DateTime? @map("deleted_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  entryLogs   EntryLog[]
-
-  @@map("users")
-}
-
 model Admin {
   adminId      Int       @id @default(autoincrement()) @map("admin_id")
   username     String    @unique
@@ -42,17 +21,12 @@ model Admin {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  // Relation to logs entered by this staff member (e.g. manual entry or syncing)
-  processedLogs EntryLog[]
-  
-  // Relation to audit logs (actions performed by this admin)
+  // Relations
   auditLogs     AuditLog[]
-
-  // Relation to pig scans performed by this admin
   pigScans      PigScan[]
-
-  // Relation to weight logs recorded by this admin
   weightLogs    WeightLog[]
+  healthLogs    HealthLog[]
+  treatments    Treatment[]
 
   @@map("admins")
 }
@@ -61,8 +35,8 @@ model AuditLog {
   auditId      Int      @id @default(autoincrement()) @map("audit_id")
   adminId      Int      @map("admin_id")
   actionType   String   @map("action_type") // create, update, delete, login, export
-  targetTable  String   @map("target_table") // users, entry_logs, admins
-  targetId     String?  @map("target_id")    // ID of the affected record
+  targetTable  String   @map("target_table")
+  targetId     String?  @map("target_id")
   description  String?
   ipAddress    String?  @map("ip_address")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -70,33 +44,6 @@ model AuditLog {
   admin        Admin    @relation(fields: [adminId], references: [adminId])
 
   @@map("audit_logs")
-}
-
-model EntryLog {
-  logId          Int      @id @default(autoincrement()) @map("log_id")
-  
-  // Link to User (Student/Faculty)
-  user           User?     @relation(fields: [userId], references: [userId])
-  userId         Int?      @map("user_id")
-  // We keep rfidTag here too in case user is not found/deleted but log remains? 
-  // Or just rely on userId. The Client sends rfid_tag. 
-  // Let's store scanned rfid_tag for audit if user doesn't exist yet.
-  rfidTag        String?   @map("rfid_tag")
-
-  entryTimestamp DateTime @map("entry_timestamp")
-  entryMethod    String   @map("entry_method") // rfid, manual
-  status         String   @default("success") // success, duplicate, error
-  nodeId         String?  @map("node_id")
-  location       String?  @map("location") // e.g. Main Library, Graduate Library, CEA, etc.
-  
-  // Link to Staff who processed this
-  staff          Admin?   @relation(fields: [staffId], references: [adminId])
-  staffId        Int?     @map("staff_id")
-  deletedAt      DateTime? @map("deleted_at")
-
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  @@map("entry_logs")
 }
 
 model Pig {
@@ -118,6 +65,8 @@ model Pig {
 
   scanLogs     PigScan[]
   weightLogs   WeightLog[]
+  healthLogs   HealthLog[]
+  treatments   Treatment[]
 
   @@map("pigs")
 }
@@ -127,7 +76,7 @@ model PigScan {
   pigId     Int      @map("pig_id")
   timestamp DateTime @map("timestamp")
   location  String?  @map("location")
-  scannedBy Int?     @map("scanned_by") // Admin ID
+  scannedBy Int?     @map("scanned_by")
   notes     String?  @map("notes")
 
   pig       Pig      @relation(fields: [pigId], references: [pigId])
@@ -148,4 +97,37 @@ model WeightLog {
   admin       Admin?   @relation(fields: [recordedBy], references: [adminId])
 
   @@map("weight_logs")
+}
+
+model HealthLog {
+  healthLogId    Int      @id @default(autoincrement()) @map("health_log_id")
+  pigId          Int      @map("pig_id")
+  previousStatus String   @map("previous_status")
+  newStatus      String   @map("new_status")
+  reason         String?
+  recordedBy     Int?     @map("recorded_by")
+  recordedAt     DateTime @default(now()) @map("recorded_at")
+
+  pig            Pig      @relation(fields: [pigId], references: [pigId])
+  admin          Admin?   @relation(fields: [recordedBy], references: [adminId])
+
+  @@map("health_logs")
+}
+
+model Treatment {
+  treatmentId    Int       @id @default(autoincrement()) @map("treatment_id")
+  pigId          Int       @map("pig_id")
+  type           String    @map("type")          // vaccination, deworming, medication, checkup
+  name           String    @map("name")          // e.g. "Hog Cholera Vaccine", "Ivermectin"
+  dosage         String?   @map("dosage")
+  administeredAt DateTime  @map("administered_at")
+  nextDueDate    DateTime? @map("next_due_date")
+  administeredBy Int?      @map("administered_by")
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  pig            Pig       @relation(fields: [pigId], references: [pigId])
+  admin          Admin?    @relation(fields: [administeredBy], references: [adminId])
+
+  @@map("treatments")
 }

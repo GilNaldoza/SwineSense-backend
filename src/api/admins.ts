@@ -102,4 +102,40 @@ router.delete('/:id', authenticateToken, requireRole('super_admin'), async (req:
     }
 });
 
+// Update admin profile (super_admin can update anyone; staff can only update self)
+router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+    const id = Number(req.params.id);
+    const { fullName, email, role } = req.body;
+
+    // Staff can only update themselves
+    if (req.user?.role !== 'super_admin' && req.user?.adminId !== id) {
+        return res.status(403).json({ message: "Forbidden" });
+    }
+
+    try {
+        const data: Record<string, any> = {};
+        if (fullName !== undefined) data.fullName = fullName;
+        if (email !== undefined) data.email = email;
+        // Only super_admin can change roles
+        if (role !== undefined && req.user?.role === 'super_admin') data.role = role;
+
+        const updated = await prisma.admin.update({
+            where: { adminId: id },
+            data,
+            select: {
+                adminId: true,
+                username: true,
+                fullName: true,
+                email: true,
+                role: true,
+            }
+        });
+
+        res.json(updated);
+    } catch (error) {
+        console.error('Update admin error:', error);
+        res.status(500).json({ message: "Error updating admin" });
+    }
+});
+
 export default router;

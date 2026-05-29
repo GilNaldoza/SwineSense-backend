@@ -87,129 +87,17 @@ const login = async (call: any, callback: any) => {
     }
 };
 
-const pushLogs = async (call: any, callback: any) => {
-    const logs = call.request.logs;
-    const token = getAuthToken(call);
-
-    try {
-        const decoded = verifyToken(token);
-        const staffId = decoded.adminId;
-        
-        console.log(`Processing ${logs?.length} logs from staff ID: ${staffId}`);
-
-        let processed = 0;
-
-        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-            for (const log of logs) {
-                const user = await tx.user.findUnique({
-                    where: { rfidTag: log.rfid_tag }
-                });
-                
-                const timestamp = Number(log.entry_timestamp);
-                const entryDate = isNaN(timestamp) ? new Date(log.entry_timestamp) : new Date(timestamp);
-                const safeDate = isNaN(entryDate.getTime()) ? new Date() : entryDate;
-
-                await tx.entryLog.create({
-                    data: {
-                        rfidTag: log.rfid_tag,
-                        entryTimestamp: safeDate,
-                        entryMethod: log.entry_method || 'rfid',
-                        status: log.status || (user ? 'success' : 'error'),
-                        nodeId: log.node_id,
-                        location: log.location,
-                        staffId: staffId,
-                        userId: user?.userId || null
-                    }
-                });
-                processed++;
-            }
-        });
-
-        callback(null, { success: true, message: "Logs saved successfully", items_processed: processed });
-
-    } catch (err) {
-        console.error("Auth/Db failed for pushLogs:", err);
-        callback(null, { success: false, message: "Failed to process logs", items_processed: 0 });
-    }
+// Legacy stubs — proto still defines these RPCs for old scanner compatibility
+const pushLogs = async (_call: any, callback: any) => {
+    callback(null, { success: true, message: "Logs endpoint deprecated", items_processed: 0 });
 };
 
-const pullUsers = async (call: any, callback: any) => {
-    const { last_sync_timestamp } = call.request;
-    const token = getAuthToken(call);
-
-    try {
-        verifyToken(token);
-        const since = last_sync_timestamp ? new Date(last_sync_timestamp) : new Date(0);
-        
-        const users = await prisma.user.findMany({
-            where: {
-                updatedAt: { gt: since }
-            }
-        });
-
-        const mappedUsers = users.map((u: any) => ({
-            user_id: u.userId,
-            id_number: u.idNumber,
-            rfid_tag: u.rfidTag,
-            first_name: u.firstName,
-            last_name: u.lastName,
-            email: u.email || "",
-            user_type: u.userType,
-            college: u.college || "",
-            department: u.department || "",
-            year_level: u.yearLevel || "",
-            status: u.status,
-            updated_at: u.updatedAt.toISOString()
-        }));
-
-        callback(null, { users: mappedUsers });
-
-    } catch (err) {
-        console.error("Error pulling users:", err);
-        callback(null, { users: [] });
-    }
+const pullUsers = async (_call: any, callback: any) => {
+    callback(null, { users: [] });
 };
 
-const pushUsers = async (call: any, callback: any) => {
-    const users = call.request.users;
-    const token = getTokenFromMetadata(call);
-
-    try {
-        verifyToken(token);
-        let processed = 0;
-        
-        for (const u of users) {
-             await prisma.user.upsert({
-                 where: { rfidTag: u.rfid_tag },
-                 update: {
-                     firstName: u.first_name,
-                     lastName: u.last_name,
-                     updatedAt: new Date(u.updated_at || new Date())
-                 },
-                 create: {
-                     idNumber: u.id_number,
-                     rfidTag: u.rfid_tag,
-                     firstName: u.first_name,
-                     lastName: u.last_name,
-                     email: u.email,
-                     userType: (u.user_type === 'student' || u.user_type === 'faculty') ? u.user_type : 'student',
-                     college: u.college,
-                     department: u.department,
-                     yearLevel: u.year_level,
-                     status: u.status || 'active'
-                 }
-             });
-             processed++;
-        }
-        
-        // Notify other nodes to sync
-        broadcastSignal('SYNC_USERS', `pushed_${processed}_users`);
-
-        callback(null, { success: true, message: "Synced users", items_processed: processed });
-    } catch(err) {
-        console.error("Error pushing users:", err);
-        callback(null, { success: false, message: "Sync error", items_processed: 0 });
-    }
+const pushUsers = async (_call: any, callback: any) => {
+    callback(null, { success: true, message: "Users endpoint deprecated", items_processed: 0 });
 };
 
 const pullPigs = async (call: any, callback: any) => {
